@@ -78,33 +78,6 @@ static int numRanges = 4;
  }
 
 
-static void initVec(int *vec, int n)
-{
-  for (int i=0; i< n; i++)
-    vec[i] = i;
-}
-
-static void cleanUp(int *h_A, int *h_B, int *h_C, int *h_D, int *d_A, int *d_B, int *d_C, int *d_D)
-{
-  if (d_A)
-    cudaFree(d_A);
-  if (d_B)
-    cudaFree(d_B);
-  if (d_C)
-    cudaFree(d_C);
-  if (d_D)
-    cudaFree(d_D);
-
-  // Free host memory
-  if (h_A)
-    free(h_A);
-  if (h_B)
-    free(h_B);
-  if (h_C)
-    free(h_C);
-  if (h_D)
-    free(h_D);
-}
 
 static double VectorAddSubtract()
 {
@@ -112,21 +85,7 @@ static double VectorAddSubtract()
   size_t size = N * sizeof(int);
   int threadsPerBlock = 0;
   int blocksPerGrid = 0;
-  int *h_A, *h_B, *h_C, *h_D;
   int *d_A, *d_B, *d_C, *d_D, *d_E;
-  int i, sum, diff;
-
-  // Allocate input vectors h_A and h_B in host memory
-  h_A = (int*)malloc(size);
-  h_B = (int*)malloc(size);
-  h_C = (int*)malloc(size);
-  h_D = (int*)malloc(size);
-
-  // Initialize input vectors
-  initVec(h_A, N);
-  initVec(h_B, N);
-  memset(h_C, 0, size);
-  memset(h_D, 0, size);
 
   // Allocate vectors in device memory
   cudaMalloc((void**)&d_A, size);
@@ -135,9 +94,6 @@ static double VectorAddSubtract()
   cudaMalloc((void**)&d_D, size);
   cudaMalloc((void**)&d_E, size);
 
-  // Copy vectors from host memory to device memory
-  cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice);
 
   // Invoke kernel
   threadsPerBlock = 256;
@@ -150,12 +106,10 @@ static double VectorAddSubtract()
   VecSub<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_D, N);
   VecAdd<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, N);
 
-  // Copy result from device memory to host memory
-  // h_C contains the result in host memory
-  cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost);
-  cudaMemcpy(h_D, d_D, size, cudaMemcpyDeviceToHost);
-
-  cleanUp(h_A, h_B, h_C, h_D, d_A, d_B, d_C, d_D);
+  cudaFree(d_A);
+  cudaFree(d_B);
+  cudaFree(d_C);
+  cudaFree(d_D);
   cudaFree(d_E);
   return 0.0;
 }
@@ -277,69 +231,24 @@ bool runTest(std::function<double()> runPass, CUdevice cuDevice,
     return true;
 }
 
+double measureMetric(std::function<double()> runPass, std::vector<std::string> metricNames) {
+    cudaFree(0);
 
-double measureMetric(std::function<double()> runPass, std::string metricName) {
-
-
-
-}
-
-int main(int argc, char* argv[])
-{
+    int deviceNum = 0;
     CUdevice cuDevice;
-    std::vector<std::string> metricNames;
+    int computeCapabilityMajor = 0, computeCapabilityMinor = 0;
+    DRIVER_API_CALL(cuDeviceGet(&cuDevice, deviceNum));
+    DRIVER_API_CALL(cuDeviceGetAttribute(&computeCapabilityMajor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, cuDevice));
+    DRIVER_API_CALL(cuDeviceGetAttribute(&computeCapabilityMinor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, cuDevice));
+    if(computeCapabilityMajor < 7) {
+      printf("Sample unsupported on Device with compute capability < 7.0\n");
+      return -2.0;
+    }
+
     std::vector<uint8_t> counterDataImagePrefix;
     std::vector<uint8_t> configImage;
     std::vector<uint8_t> counterDataImage;
     std::vector<uint8_t> counterDataScratchBuffer;
-    std::string CounterDataFileName("SimpleCupti.counterdata");
-    std::string CounterDataSBFileName("SimpleCupti.counterdataSB");
-    CUpti_ProfilerReplayMode profilerReplayMode = CUPTI_KernelReplay;
-    CUpti_ProfilerRange profilerRange = CUPTI_AutoRange;
-    int deviceCount, deviceNum;
-    int computeCapabilityMajor = 0, computeCapabilityMinor = 0;
-    char* metricName;
-
-    printf("Usage: %s [device_num] [metric_names comma separated]\n", argv[0]);
-
-    DRIVER_API_CALL(cuInit(0));
-    DRIVER_API_CALL(cuDeviceGetCount(&deviceCount));
-
-    if (deviceCount == 0) {
-        printf("There is no device supporting CUDA.\n");
-        return -2;
-    }
-
-    if (argc > 1)
-        deviceNum = atoi(argv[1]);
-    else
-        deviceNum = 0;
-    printf("CUDA Device Number: %d\n", deviceNum);
-
-    DRIVER_API_CALL(cuDeviceGet(&cuDevice, deviceNum));
-    DRIVER_API_CALL(cuDeviceGetAttribute(&computeCapabilityMajor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, cuDevice));
-    DRIVER_API_CALL(cuDeviceGetAttribute(&computeCapabilityMinor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, cuDevice));
-
-    printf("Compute Capability of Device: %d.%d\n", computeCapabilityMajor,computeCapabilityMinor);
-
-    if(computeCapabilityMajor < 7) {
-      printf("Sample unsupported on Device with compute capability < 7.0\n");
-      return -2;
-    }
-
-
-    // Get the names of the metrics to collect
-    if (argc > 2) {
-        metricName = strtok(argv[2], ",");
-        while(metricName != NULL)
-        {
-            metricNames.push_back(metricName);
-            metricName = strtok(NULL, ",");
-        }
-    }
-    else {
-        metricNames.push_back(METRIC_NAME);
-    }
 
     CUpti_Profiler_Initialize_Params profilerInitializeParams = {CUpti_Profiler_Initialize_Params_STRUCT_SIZE};
     CUPTI_API_CALL(cuptiProfilerInitialize(&profilerInitializeParams));
@@ -352,44 +261,44 @@ int main(int argc, char* argv[])
     /* Generate configuration for metrics, this can also be done offline*/
     NVPW_InitializeHost_Params initializeHostParams = { NVPW_InitializeHost_Params_STRUCT_SIZE };
     NVPW_API_CALL(NVPW_InitializeHost(&initializeHostParams));
-
     if (metricNames.size()) {
-        if(!NV::Metric::Config::GetConfigImage(chipName, metricNames, configImage))
-        {
+        if(!NV::Metric::Config::GetConfigImage(chipName, metricNames, configImage)) {
             std::cout << "Failed to create configImage" << std::endl;
-            exit(-1);
+            return -1.0;
         }
-        if(!NV::Metric::Config::GetCounterDataPrefixImage(chipName, metricNames, counterDataImagePrefix))
-        {
+        if(!NV::Metric::Config::GetCounterDataPrefixImage(chipName, metricNames, counterDataImagePrefix)) {
             std::cout << "Failed to create counterDataImagePrefix" << std::endl;
-            exit(-1);
+            return -1.0;
         }
-    }
-    else
-    {
+    } else {
         std::cout << "No metrics provided to profile" << std::endl;
-        exit(-1);
+        return -1.0;
     }
 
-    if(!CreateCounterDataImage(counterDataImage, counterDataScratchBuffer, counterDataImagePrefix))
-    {
+
+
+
+    CUpti_ProfilerReplayMode profilerReplayMode = CUPTI_KernelReplay;
+    CUpti_ProfilerRange profilerRange = CUPTI_AutoRange;
+
+    if(!CreateCounterDataImage(counterDataImage, counterDataScratchBuffer, counterDataImagePrefix)) {
         std::cout << "Failed to create counterDataImage" << std::endl;
-        exit(-1);
     }
-    if(!runTest(VectorAddSubtract,  cuDevice, configImage, counterDataScratchBuffer, counterDataImage, profilerReplayMode, profilerRange))
-    {
-        std::cout << "Failed to run sample" << std::endl;
-        exit(-1);
-    }
+    runTest(runPass,  cuDevice, configImage, counterDataScratchBuffer, counterDataImage, profilerReplayMode, profilerRange);
+
+
     CUpti_Profiler_DeInitialize_Params profilerDeInitializeParams = {CUpti_Profiler_DeInitialize_Params_STRUCT_SIZE};
     CUPTI_API_CALL(cuptiProfilerDeInitialize(&profilerDeInitializeParams));
 
-    /* Dump counterDataImage in file */
-    //WriteBinaryFile(CounterDataFileName.c_str(), counterDataImage);
-    //WriteBinaryFile(CounterDataSBFileName.c_str(), counterDataScratchBuffer);
-
-    /* Evaluation of metrics collected in counterDataImage, this can also be done offline*/
     NV::Metric::Eval::PrintMetricValues(chipName, counterDataImage, metricNames);
+
+    return 0.0;
+}
+
+int main(int argc, char* argv[]) {
+    measureMetric(VectorAddSubtract, { "dram__bytes_write.sum.per_second", "dram__bytes_read.sum.per_second"});
+
+
 
     return 0;
 }
