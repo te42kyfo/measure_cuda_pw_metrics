@@ -1,7 +1,7 @@
 #
 # Copyright 2017-2018 NVIDIA Corporation. All rights reserved
 # 
-INCLUDES = -I../../../../include -I../../include
+INCLUDES =
 
 ifndef OS
  OS   := $(shell uname)
@@ -22,13 +22,12 @@ else
         LIB_PATH ?= ../../../../targets/$(TARGET_ARCH)-$(TARGET_OS)/lib
         TARGET_CUDA_PATH = -L $(LIB_PATH)/stubs
     else
-        EXTRAS_LIB_PATH := ../../lib64
-        LIB_PATH ?= ../../../../lib64
+        LIB_PATH ?=
     endif
 endif
 
 ifeq ($(OS), Windows_NT)
-    LIBS = -lcuda -L $(LIB_PATH) -lcupti -lnvperf_host -lnvperf_target -lprofilerHostUtil
+    LIBS = -lcuda  -lcupti -lnvperf_host -lnvperf_target -lprofilerHostUtil
     OBJ = obj
     LIBEXT = lib
     LIBPREFIX =
@@ -41,9 +40,9 @@ else
         LIBS :=
         ifeq ($(HOST_ARCH), $(TARGET_ARCH))
             export LD_LIBRARY_PATH := $(LD_LIBRARY_PATH):$(LIB_PATH)
-            LIBS = -L $(EXTRAS_LIB_PATH)
+            LIBS =
         endif
-        LIBS += $(TARGET_CUDA_PATH) -lcuda -L $(LIB_PATH) -lcupti -lnvperf_host -lnvperf_target
+        LIBS += $(TARGET_CUDA_PATH) -lcuda -lcupti -lnvperf_host -lnvperf_target
     endif
     OBJ = o
     LIBEXT = a
@@ -77,7 +76,7 @@ autoRangeSample: simplecuda.$(OBJ)
 	nvcc $(NVCC_COMPILER) -o $@ $^ $(LIBS) $(INCLUDES)
 
 simplecuda.$(OBJ): simplecuda.cu
-	nvcc $(NVCC_COMPILER) -c $(INCLUDES) $<
+	nvcc $(NVCC_COMPILER) -arch sm_70 -c $(INCLUDES) $<
 
 run: autoRangeSample
 	./$<

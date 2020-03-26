@@ -50,7 +50,7 @@ do {                                                                           \
     }                                                                          \
 } while (0)
 
-static int numRanges = 2;
+static int numRanges = 4;
 #define METRIC_NAME "smsp__warps_launched.avg+"
 
 // Device code
@@ -59,6 +59,14 @@ static int numRanges = 2;
      int i = blockDim.x * blockIdx.x + threadIdx.x;
      if (i < N)
          C[i] = A[i] + B[i];
+ }
+
+
+  __global__ void VecMul(const int* A, const int* B, int* C, int N)
+ {
+     int i = blockDim.x * blockIdx.x + threadIdx.x;
+     if (i < N)
+         C[i] = A[i] * B[i];
  }
 
  // Device code
@@ -100,12 +108,12 @@ static void cleanUp(int *h_A, int *h_B, int *h_C, int *h_D, int *d_A, int *d_B, 
 
 static double VectorAddSubtract()
 {
-  int N = 50000000;
+  int N = 500000000;
   size_t size = N * sizeof(int);
   int threadsPerBlock = 0;
   int blocksPerGrid = 0;
   int *h_A, *h_B, *h_C, *h_D;
-  int *d_A, *d_B, *d_C, *d_D;
+  int *d_A, *d_B, *d_C, *d_D, *d_E;
   int i, sum, diff;
 
   // Allocate input vectors h_A and h_B in host memory
@@ -125,6 +133,7 @@ static double VectorAddSubtract()
   cudaMalloc((void**)&d_B, size);
   cudaMalloc((void**)&d_C, size);
   cudaMalloc((void**)&d_D, size);
+  cudaMalloc((void**)&d_E, size);
 
   // Copy vectors from host memory to device memory
   cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);
@@ -136,26 +145,18 @@ static double VectorAddSubtract()
   printf("Launching kernel: blocks %d, thread/block %d\n",
          blocksPerGrid, threadsPerBlock);
 
-  VecAdd<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, N);
 
+  VecMul<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_E, N);
   VecSub<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_D, N);
+  VecAdd<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, N);
 
   // Copy result from device memory to host memory
   // h_C contains the result in host memory
   cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost);
   cudaMemcpy(h_D, d_D, size, cudaMemcpyDeviceToHost);
 
-  // Verify result
-  for (i = 0; i < N; ++i) {
-    sum = h_A[i] + h_B[i];
-    diff = h_A[i] - h_B[i];
-    if (h_C[i] != sum || h_D[i] != diff) {
-      fprintf(stderr, "error: result verification failed\n");
-      exit(-1);
-    }
-  }
-
   cleanUp(h_A, h_B, h_C, h_D, d_A, d_B, d_C, d_D);
+  cudaFree(d_E);
   return 0.0;
 }
 
@@ -276,6 +277,13 @@ bool runTest(std::function<double()> runPass, CUdevice cuDevice,
     return true;
 }
 
+
+double measureMetric(std::function<double()> runPass, std::string metricName) {
+
+
+
+}
+
 int main(int argc, char* argv[])
 {
     CUdevice cuDevice;
@@ -318,6 +326,7 @@ int main(int argc, char* argv[])
       printf("Sample unsupported on Device with compute capability < 7.0\n");
       return -2;
     }
+
 
     // Get the names of the metrics to collect
     if (argc > 2) {
@@ -367,7 +376,6 @@ int main(int argc, char* argv[])
         std::cout << "Failed to create counterDataImage" << std::endl;
         exit(-1);
     }
-
     if(!runTest(VectorAddSubtract,  cuDevice, configImage, counterDataScratchBuffer, counterDataImage, profilerReplayMode, profilerRange))
     {
         std::cout << "Failed to run sample" << std::endl;
