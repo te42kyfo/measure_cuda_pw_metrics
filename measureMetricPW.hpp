@@ -53,7 +53,7 @@
     }                                                                          \
   } while (0)
 
-static int numRanges = 4;
+static int numRanges = 2;
 
 #endif // __MEASUREMETRICPW_H_
 
@@ -139,7 +139,7 @@ bool runTestStart(CUdevice cuDevice, std::vector<uint8_t> &configImage,
                   CUpti_ProfilerReplayMode profilerReplayMode,
                   CUpti_ProfilerRange profilerRange) {
 
-  DRIVER_API_CALL(cuCtxCreate(&cuContext, 0, cuDevice));
+  // DRIVER_API_CALL(cuCtxCreate(&cuContext, 0, cuDevice));
 
   CUpti_Profiler_BeginSession_Params beginSessionParams = {
       CUpti_Profiler_BeginSession_Params_STRUCT_SIZE};
@@ -182,7 +182,7 @@ bool runTestEnd() {
       CUpti_Profiler_EndSession_Params_STRUCT_SIZE};
   CUPTI_API_CALL(cuptiProfilerEndSession(&endSessionParams));
 
-  DRIVER_API_CALL(cuCtxDestroy(cuContext));
+  // DRIVER_API_CALL(cuCtxDestroy(cuContext));
 
   return true;
 }
@@ -255,7 +255,7 @@ double measureMetricStart(std::vector<std::string> newMetricNames) {
   return 0.0;
 }
 
-double measureMetricStop() {
+extern "C" double measureMetricStop() {
 
   runTestEnd();
 
@@ -276,6 +276,21 @@ double measureMetric(std::function<double()> runPass,
 }
 
 extern "C" double measureBandwidthStart() {
-  measureMetricStart(
+  measureMetricStart({"dram__bytes_write.sum", "dram__bytes_read.sum"});
+  return 0.0;
+}
+
+extern "C" double measureBandwidthStop() {
+
+  runTestEnd();
+
+  CUpti_Profiler_DeInitialize_Params profilerDeInitializeParams = {
+      CUpti_Profiler_DeInitialize_Params_STRUCT_SIZE};
+  CUPTI_API_CALL(cuptiProfilerDeInitialize(&profilerDeInitializeParams));
+
+  NV::Metric::Eval::PrintMetricValues(
+      chipName, counterDataImage,
       {"dram__bytes_write.sum.per_second", "dram__bytes_read.sum.per_second"});
+
+  return 0.0;
 }
