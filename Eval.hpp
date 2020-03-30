@@ -1,5 +1,7 @@
-//#include "Parser.hpp"
+#pragma once
+#include "Parser.hpp"
 #include "ScopeExit.h"
+#include <cuda_runtime.h>
 #include <iostream>
 #include <nvperf_cuda_host.h>
 #include <nvperf_host.h>
@@ -156,6 +158,7 @@ bool GetMetricGpuValue(std::string chipName,
 bool PrintMetricValues(std::string chipName,
                        std::vector<uint8_t> counterDataImage,
                        std::vector<std::string> metricNames) {
+
   if (!counterDataImage.size()) {
     std::cout << "Counter Data Image is empty!\n";
     return false;
