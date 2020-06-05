@@ -3,6 +3,7 @@
 
 #include "Eval.hpp"
 #include "Metric.hpp"
+#include <Python.h>
 #include <cuda.h>
 #include <cupti_profiler_target.h>
 #include <cupti_target.h>
@@ -255,7 +256,20 @@ double measureMetricStart(std::vector<std::string> newMetricNames) {
   return 0.0;
 }
 
-extern "C" double measureMetricStop() {
+// double measureMetric(std::function<double()> runPass,
+//                      std::vector<std::string> metricNames) {
+//   measureMetricStart(metricNames);
+//   runPass();
+//   return measureMetricStop();
+//}
+
+extern "C" void measureBandwidthStart() {
+  measureMetricStart({"dram__bytes_read.sum", "dram__bytes_write.sum",
+                      "lts__t_sectors_op_read.sum",
+                      "lts__t_sectors_op_write.sum"});
+}
+
+extern "C" double measureMetricStopPrint() {
 
   runTestEnd();
 
@@ -268,19 +282,7 @@ extern "C" double measureMetricStop() {
   return 0.0;
 }
 
-double measureMetric(std::function<double()> runPass,
-                     std::vector<std::string> metricNames) {
-  measureMetricStart(metricNames);
-  runPass();
-  return measureMetricStop();
-}
-
-extern "C" double measureBandwidthStart() {
-  measureMetricStart({"dram__bytes_write.sum", "dram__bytes_read.sum"});
-  return 0.0;
-}
-
-extern "C" double measureBandwidthStop() {
+extern "C" PyObject *measureMetricStop() {
 
   runTestEnd();
 
@@ -288,9 +290,13 @@ extern "C" double measureBandwidthStop() {
       CUpti_Profiler_DeInitialize_Params_STRUCT_SIZE};
   CUPTI_API_CALL(cuptiProfilerDeInitialize(&profilerDeInitializeParams));
 
-  NV::Metric::Eval::PrintMetricValues(
-      chipName, counterDataImage,
-      {"dram__bytes_write.sum.per_second", "dram__bytes_read.sum.per_second"});
+  auto values = NV::Metric::Eval::GetMetricValues(chipName, counterDataImage,
+                                                  metricNames);
 
-  return 0.0;
+  PyObject *result = PyList_New(0);
+  for (auto value : values) {
+    PyList_Append(result, PyFloat_FromDouble(value));
+  }
+
+  return result;
 }

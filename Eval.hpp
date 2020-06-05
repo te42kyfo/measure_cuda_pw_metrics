@@ -255,6 +255,105 @@ bool PrintMetricValues(std::string chipName,
   }
   return true;
 }
+
+std::vector<double> GetMetricValues(std::string chipName,
+                                    std::vector<uint8_t> counterDataImage,
+                                    std::vector<std::string> metricNames) {
+  std::vector<double> values;
+  if (!counterDataImage.size()) {
+    std::cout << "Counter Data Image is empty!\n";
+    return values;
+  }
+
+  NVPW_CUDA_MetricsContext_Create_Params metricsContextCreateParams = {
+      NVPW_CUDA_MetricsContext_Create_Params_STRUCT_SIZE};
+  metricsContextCreateParams.pChipName = chipName.c_str();
+  RETURN_IF_NVPW_ERROR(
+      values, NVPW_CUDA_MetricsContext_Create(&metricsContextCreateParams));
+
+  NVPW_MetricsContext_Destroy_Params metricsContextDestroyParams = {
+      NVPW_MetricsContext_Destroy_Params_STRUCT_SIZE};
+  metricsContextDestroyParams.pMetricsContext =
+      metricsContextCreateParams.pMetricsContext;
+  SCOPE_EXIT([&]() {
+    NVPW_MetricsContext_Destroy(
+        (NVPW_MetricsContext_Destroy_Params *)&metricsContextDestroyParams);
+  });
+
+  NVPW_CounterData_GetNumRanges_Params getNumRangesParams = {
+      NVPW_CounterData_GetNumRanges_Params_STRUCT_SIZE};
+  getNumRangesParams.pCounterDataImage = &counterDataImage[0];
+  RETURN_IF_NVPW_ERROR(values,
+                       NVPW_CounterData_GetNumRanges(&getNumRangesParams));
+
+  std::vector<std::string> reqName;
+  reqName.resize(metricNames.size());
+  bool isolated = true;
+  bool keepInstances = true;
+  std::vector<const char *> metricNamePtrs;
+  for (size_t metricIndex = 0; metricIndex < metricNames.size();
+       ++metricIndex) {
+    NV::Metric::Parser::ParseMetricNameString(metricNames[metricIndex],
+                                              &reqName[metricIndex], &isolated,
+                                              &keepInstances);
+    metricNamePtrs.push_back(reqName[metricIndex].c_str());
+  }
+
+  for (size_t rangeIndex = 0; rangeIndex < getNumRangesParams.numRanges;
+       ++rangeIndex) {
+    std::vector<const char *> descriptionPtrs;
+
+    NVPW_Profiler_CounterData_GetRangeDescriptions_Params getRangeDescParams = {
+        NVPW_Profiler_CounterData_GetRangeDescriptions_Params_STRUCT_SIZE};
+    getRangeDescParams.pCounterDataImage = &counterDataImage[0];
+    getRangeDescParams.rangeIndex = rangeIndex;
+    RETURN_IF_NVPW_ERROR(values, NVPW_Profiler_CounterData_GetRangeDescriptions(
+                                     &getRangeDescParams));
+
+    descriptionPtrs.resize(getRangeDescParams.numDescriptions);
+
+    getRangeDescParams.ppDescriptions = &descriptionPtrs[0];
+    RETURN_IF_NVPW_ERROR(values, NVPW_Profiler_CounterData_GetRangeDescriptions(
+                                     &getRangeDescParams));
+
+    std::string rangeName;
+    for (size_t descriptionIndex = 0;
+         descriptionIndex < getRangeDescParams.numDescriptions;
+         ++descriptionIndex) {
+      if (descriptionIndex) {
+        rangeName += "/";
+      }
+      rangeName += descriptionPtrs[descriptionIndex];
+    }
+
+    std::vector<double> gpuValues;
+    gpuValues.resize(metricNames.size());
+
+    NVPW_MetricsContext_SetCounterData_Params setCounterDataParams = {
+        NVPW_MetricsContext_SetCounterData_Params_STRUCT_SIZE};
+    setCounterDataParams.pMetricsContext =
+        metricsContextCreateParams.pMetricsContext;
+    setCounterDataParams.pCounterDataImage = &counterDataImage[0];
+    setCounterDataParams.isolated = true;
+    setCounterDataParams.rangeIndex = rangeIndex;
+    NVPW_MetricsContext_SetCounterData(&setCounterDataParams);
+
+    NVPW_MetricsContext_EvaluateToGpuValues_Params evalToGpuParams = {
+        NVPW_MetricsContext_EvaluateToGpuValues_Params_STRUCT_SIZE};
+    evalToGpuParams.pMetricsContext =
+        metricsContextCreateParams.pMetricsContext;
+    evalToGpuParams.numMetrics = metricNamePtrs.size();
+    evalToGpuParams.ppMetricNames = &metricNamePtrs[0];
+    evalToGpuParams.pMetricValues = &gpuValues[0];
+    NVPW_MetricsContext_EvaluateToGpuValues(&evalToGpuParams);
+
+    for (size_t metricIndex = 0; metricIndex < metricNames.size();
+         ++metricIndex) {
+      values.push_back(gpuValues[metricIndex]);
+    }
+  }
+  return values;
+}
 } // namespace Eval
 } // namespace Metric
 } // namespace NV
