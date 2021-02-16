@@ -293,10 +293,15 @@ extern "C" PyObject *measureMetricStop() {
   auto values = NV::Metric::Eval::GetMetricValues(chipName, counterDataImage,
                                                   metricNames);
 
+  PyGILState_STATE gstate = PyGILState_Ensure();
+
+
   PyObject *result = PyList_New(0);
   for (auto value : values) {
     PyList_Append(result, PyFloat_FromDouble(value));
   }
+
+  PyGILState_Release(gstate);
 
   return result;
 }
