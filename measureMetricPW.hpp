@@ -60,6 +60,8 @@ static int numRanges = 2;
 
 namespace {
 CUcontext cuContext;
+
+CUdevice cuDevice;
 std::string chipName;
 std::vector<std::string> metricNames;
 
@@ -188,13 +190,17 @@ bool runTestEnd() {
   return true;
 }
 
+bool static initialized = false;
+
 double measureMetricStart(std::vector<std::string> newMetricNames) {
+
+  if(!initialized) {
+    initialized = true;
   cudaFree(0);
 
   metricNames = newMetricNames;
 
   int deviceNum = 0;
-  CUdevice cuDevice;
   int computeCapabilityMajor = 0, computeCapabilityMinor = 0;
   DRIVER_API_CALL(cuDeviceGet(&cuDevice, deviceNum));
   DRIVER_API_CALL(cuDeviceGetAttribute(
@@ -242,14 +248,15 @@ double measureMetricStart(std::vector<std::string> newMetricNames) {
     std::cout << "No metrics provided to profile" << std::endl;
     return -1.0;
   }
-
-  CUpti_ProfilerReplayMode profilerReplayMode = CUPTI_KernelReplay;
-  CUpti_ProfilerRange profilerRange = CUPTI_AutoRange;
+  }
 
   if (!CreateCounterDataImage(counterDataImage, counterDataScratchBuffer,
                               counterDataImagePrefix)) {
     std::cout << "Failed to create counterDataImage" << std::endl;
   }
+
+  CUpti_ProfilerReplayMode profilerReplayMode = CUPTI_KernelReplay;
+  CUpti_ProfilerRange profilerRange = CUPTI_AutoRange;
 
   runTestStart(cuDevice, configImage, counterDataScratchBuffer,
                counterDataImage, profilerReplayMode, profilerRange);
@@ -273,10 +280,10 @@ extern "C" double measureMetricStopPrint() {
 
   runTestEnd();
 
-  CUpti_Profiler_DeInitialize_Params profilerDeInitializeParams = {
+  /*CUpti_Profiler_DeInitialize_Params profilerDeInitializeParams = {
       CUpti_Profiler_DeInitialize_Params_STRUCT_SIZE};
   CUPTI_API_CALL(cuptiProfilerDeInitialize(&profilerDeInitializeParams));
-
+*/
   NV::Metric::Eval::PrintMetricValues(chipName, counterDataImage, metricNames);
 
   return 0.0;
@@ -286,10 +293,10 @@ extern "C" PyObject *measureMetricStop() {
 
   runTestEnd();
 
-  CUpti_Profiler_DeInitialize_Params profilerDeInitializeParams = {
+  /*CUpti_Profiler_DeInitialize_Params profilerDeInitializeParams = {
       CUpti_Profiler_DeInitialize_Params_STRUCT_SIZE};
   CUPTI_API_CALL(cuptiProfilerDeInitialize(&profilerDeInitializeParams));
-
+*/
   auto values = NV::Metric::Eval::GetMetricValues(chipName, counterDataImage,
                                                   metricNames);
 
